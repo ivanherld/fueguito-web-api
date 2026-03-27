@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import bodyParser from 'body-parser';
+import { authentication } from './src/middlewares/authentication.js';
+import authRouter from './src/routes/auth.routes.js';
+import clipsRouter from './src/routes/clips.routes.js';
+import notFound from './src/middlewares/not-found.js';
 
 const app = express();
 
@@ -18,17 +23,11 @@ app.get('/', (req, res) => {
     res.json({message: "Bienvenidos a la API REST de Iván"});
 });
 
-import authRouter from './src/routes/auth.routes.js';
-
 app.use(bodyParser.json());
 app.use('/auth', authRouter);
 
-import productsRouter from './src/routes/products.router.js';
-app.use('/api', authentication, productsRouter);
+app.use('/api', authentication, clipsRouter);
 
-import notFound from './src/middlewares/not-found.js';
-import bodyParser from 'body-parser';
-import { authentication } from './src/middlewares/authentication.js';
 app.use(notFound);
 
 const PORT = process.env.PORT || 3001;
