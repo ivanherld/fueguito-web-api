@@ -1,0 +1,19 @@
+[Unit]
+Description=Fueguito API backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=appuser
+Group=appuser
+WorkingDirectory=/opt/fueguito-pagina-backend
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/fueguito-pagina-backend/.env
+ExecStart=/bin/bash /opt/fueguito-pagina-backend/scripts/start-server.sh
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

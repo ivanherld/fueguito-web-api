@@ -78,7 +78,7 @@ const buildSceneTitle = ({ escena, titulo, orden }) => {
   return null;
 };
 
-const sceneFolder = ({ titulo, orden, escena }) => {
+export const sceneFolder = ({ titulo, orden, escena }) => {
   const sceneTitle = buildSceneTitle({ escena, titulo, orden });
 
   if (!sceneTitle) {
@@ -88,6 +88,8 @@ const sceneFolder = ({ titulo, orden, escena }) => {
   const token = sceneTitle.replace(/^Escena\s+/i, '').toLowerCase();
   return `escena${token}`;
 };
+
+export const sceneUploadFolder = (folderByScene) => `fueguitoweb/clips/${folderByScene}`;
 
 const validateCreatePayload = (payload) => {
   if (!payload.titulo) {
@@ -144,21 +146,20 @@ export const createClip = async ({ body, files }) => {
   const thumbnailFile = files?.thumbnail?.[0] || null;
   const storyboardFile = files?.storyboard?.[0] || files?.url_storyboard?.[0] || null;
   const storyboard2File = files?.storyboard2?.[0] || files?.url_storyboard2?.[0] || null;
+  const uploadFolder = sceneUploadFolder(folderByScene);
 
-  const clipUploaded = await saveUploadedFile(clipFile, `clips/${folderByScene}`, {
+  const clipUploaded = await saveUploadedFile(clipFile, uploadFolder, {
     preserveOriginalName: true,
   });
-  const thumbnailUploaded = await saveUploadedFile(thumbnailFile, `thumbnails/${folderByScene}`, {
+  const thumbnailUploaded = await saveUploadedFile(thumbnailFile, uploadFolder, {
     preserveOriginalName: true,
   });
-  const storyboardUploaded = await saveUploadedFile(storyboardFile, `storyboards/${folderByScene}`, {
+  const storyboardUploaded = await saveUploadedFile(storyboardFile, uploadFolder, {
     preserveOriginalName: true,
   });
-  const storyboard2Uploaded = await saveUploadedFile(
-    storyboard2File,
-    `storyboards/${folderByScene}`,
-    { preserveOriginalName: true },
-  );
+  const storyboard2Uploaded = await saveUploadedFile(storyboard2File, uploadFolder, {
+    preserveOriginalName: true,
+  });
 
   const payload = {
     ...(body.filmado !== undefined ? { filmado: parseBoolean(body.filmado) } : {}),
@@ -201,33 +202,40 @@ export const updateClip = async ({ id, body, files }) => {
   const thumbnailFile = files?.thumbnail?.[0] || null;
   const storyboardFile = files?.storyboard?.[0] || files?.url_storyboard?.[0] || null;
   const storyboard2File = files?.storyboard2?.[0] || files?.url_storyboard2?.[0] || null;
+  const uploadFolder = sceneUploadFolder(folderByScene);
 
-  const clipUploaded = await saveUploadedFile(clipFile, `clips/${folderByScene}`, {
+  const clipUploaded = await saveUploadedFile(clipFile, uploadFolder, {
     preserveOriginalName: true,
   });
-  const thumbnailUploaded = await saveUploadedFile(thumbnailFile, `thumbnails/${folderByScene}`, {
+  const thumbnailUploaded = await saveUploadedFile(thumbnailFile, uploadFolder, {
     preserveOriginalName: true,
   });
-  const storyboardUploaded = await saveUploadedFile(storyboardFile, `storyboards/${folderByScene}`, {
+  const storyboardUploaded = await saveUploadedFile(storyboardFile, uploadFolder, {
     preserveOriginalName: true,
   });
-  const storyboard2Uploaded = await saveUploadedFile(
-    storyboard2File,
-    `storyboards/${folderByScene}`,
-    { preserveOriginalName: true },
-  );
+  const storyboard2Uploaded = await saveUploadedFile(storyboard2File, uploadFolder, {
+    preserveOriginalName: true,
+  });
 
   const nextFilmadoRaw = pickFirstDefined(body.filmado, currentClip.filmado);
   const nextFilmado = parseBoolean(nextFilmadoRaw);
-  const nextUrl = pickFirstDefined(clipUploaded?.url, currentClip.url, null);
+  const nextUrl = pickFirstDefined(clipUploaded?.url, body.url || undefined, currentClip.url, null);
   const nextStoryboard = pickFirstDefined(
     storyboardUploaded?.url,
+    body.url_storyboard || undefined,
     currentClip.url_storyboard,
     null,
   );
   const nextStoryboard2 = pickFirstDefined(
     storyboard2Uploaded?.url,
+    body.url_storyboard2 || undefined,
     currentClip.url_storyboard2,
+    null,
+  );
+  const nextThumbnail = pickFirstDefined(
+    thumbnailUploaded?.url,
+    body.thumbnail || undefined,
+    currentClip.thumbnail,
     null,
   );
 
@@ -242,25 +250,22 @@ export const updateClip = async ({ id, body, files }) => {
       ? { comentarios_filmacion: body.comentarios_filmacion }
       : {}),
     ...(body.decorado !== undefined ? { decorado: body.decorado } : {}),
-    ...(clipUploaded ? { url: nextUrl } : {}),
-    ...(storyboardUploaded ? { url_storyboard: nextStoryboard } : {}),
-    ...(storyboard2Uploaded ? { url_storyboard2: nextStoryboard2 } : {}),
-    ...(thumbnailUploaded
-      ? { thumbnail: pickFirstDefined(thumbnailUploaded?.url, currentClip.thumbnail, null) }
+    ...(clipUploaded || body.url !== undefined ? { url: nextUrl } : {}),
+    ...(storyboardUploaded || body.url_storyboard !== undefined
+      ? { url_storyboard: nextStoryboard }
       : {}),
+    ...(storyboard2Uploaded || body.url_storyboard2 !== undefined
+      ? { url_storyboard2: nextStoryboard2 }
+      : {}),
+    ...(thumbnailUploaded || body.thumbnail !== undefined ? { thumbnail: nextThumbnail } : {}),
   };
-
-  const effectiveFilmado = payload.filmado ?? nextFilmado;
-  const effectiveUrl = payload.url ?? nextUrl;
-  const effectiveStoryboard = payload.url_storyboard ?? nextStoryboard;
-  const effectiveStoryboard2 = payload.url_storyboard2 ?? nextStoryboard2;
 
   validateCreatePayload({
     titulo: payload.titulo ?? currentClip.titulo,
-    filmado: effectiveFilmado,
-    url: effectiveUrl,
-    url_storyboard: effectiveStoryboard,
-    url_storyboard2: effectiveStoryboard2,
+    filmado: payload.filmado ?? nextFilmado,
+    url: nextUrl,
+    url_storyboard: nextStoryboard,
+    url_storyboard2: nextStoryboard2,
   });
 
   if (Object.keys(payload).length === 0) {

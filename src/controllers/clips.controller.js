@@ -1,4 +1,5 @@
 import * as clipsService from '../services/clips.services.js';
+import { generateUploadUrl, buildUploadKey } from '../services/presigned.service.js';
 
 export const getAllClips = async (req, res) => {
   try {
@@ -49,6 +50,31 @@ export const updateClip = async (req, res) => {
     }
 
     return res.json(updated);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+};
+
+export const getUploadUrl = async (req, res) => {
+  try {
+    const { escena, titulo, orden, fileType, filename, contentType } = req.body;
+
+    if (!filename || !contentType) {
+      return res.status(400).json({ error: 'filename y contentType son requeridos' });
+    }
+
+    const validFileTypes = ['clip', 'thumbnail', 'storyboard', 'storyboard2'];
+    if (fileType && !validFileTypes.includes(fileType)) {
+      return res.status(400).json({ error: `fileType debe ser: ${validFileTypes.join(', ')}` });
+    }
+
+    const folder = clipsService.sceneUploadFolder(
+      clipsService.sceneFolder({ escena, titulo, orden }),
+    );
+    const key = buildUploadKey({ folder, filename });
+    const result = await generateUploadUrl({ key, contentType });
+
+    return res.json(result);
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }

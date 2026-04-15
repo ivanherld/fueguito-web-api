@@ -6,6 +6,7 @@ import {
   createClip,
   updateClip,
   deleteClip,
+  getUploadUrl,
 } from '../controllers/clips.controller.js';
 
 const router = Router();
@@ -29,6 +30,7 @@ const clipUploadFields = upload.fields([
 ]);
 
 router.get('/clips', getAllClips);
+router.post('/clips/upload-url', getUploadUrl);
 router.get('/clips/:id', getClipById);
 router.post('/clips', clipUploadFields, createClip);
 router.put('/clips/:id', clipUploadFields, updateClip);

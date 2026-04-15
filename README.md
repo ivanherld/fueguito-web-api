@@ -1,117 +1,203 @@
-# API REST con Node.js, Supabase y Cloudflare
+# fueguito-pagina-backend
 
-La API gestiona clips de escenas: metadatos en Supabase y archivos multimedia (clip, thumbnail o storyboard) con almacenamiento local o rclone.
+API REST para gestión de clips de escenas de una película. Almacena metadatos en Supabase y archivos multimedia (video, thumbnail, storyboard) en Cloudflare R2.
+
+## Stack
+
+- **Runtime:** Node.js (ES Modules)
+- **Framework:** Express 5
+- **Base de datos:** Supabase (PostgreSQL)
+- **Almacenamiento:** Cloudflare R2
+- **Auth:** JWT + bcrypt
 
 ## Instalación
 
-```shell
+```bash
 npm install
-
+cp .env-example .env   # completar variables
+npm run dev            # desarrollo con nodemon
+npm start              # producción
 ```
-## Tecnologías utilizadas: 
-    - `bcrypt`
-    - `body-parser`
-    - `cors`
-    - `dotenv`
-    - `express`
-    - `jsonwebtoken`
-  - `@supabase/supabase-js`
-  - `multer`
 
+## Variables de entorno
 
-## URL en render: https://api-node-ivanh.onrender.com
+| Variable | Descripción |
+|---|---|
+| `PORT` | Puerto del servidor (default: 3001) |
+| `JWT_SECRET_KEY` | Secreto para firmar JWTs |
+| `ADMIN_PASS_HASH` | Hash bcrypt de la contraseña del admin |
+| `SUPABASE_URL` | URL del proyecto Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service role key de Supabase |
+| `SUPABASE_CLIPS_TABLE` | Nombre de la tabla (default: `movie_clips`) |
+| `STORAGE_PUBLIC_BASE_URL` | URL pública base del CDN de R2 |
+| `R2_BUCKET_NAME` | Nombre del bucket en Cloudflare R2 |
+| `R2_ACCESS_KEY_ID` | Access key de R2 |
+| `R2_SECRET_ACCESS_KEY` | Secret key de R2 |
+| `R2_S3_ENDPOINT_EU` | Endpoint S3-compatible de R2 |
+| `USE_RCLONE_UPLOAD` | `true` para subir via rclone, `false` para local |
+| `RCLONE_REMOTE` | Nombre del remote rclone (ej: `cloudflare-r2`) |
+| `LOCAL_UPLOAD_ROOT` | Carpeta local de uploads (default: `uploads/files`) |
 
-# Rutas disponibles
+Para generar `ADMIN_PASS_HASH`:
+```bash
+node -e "import('bcrypt').then(m => m.default.hash('TU_PASSWORD', 10).then(console.log))"
+```
 
-## Nuevo módulo de clips de escenas
+---
 
-Base URL protegida por JWT: `.api/clips`
+## Autenticación
 
-- `GET .api/clips` -> Lista clips (queries opcionales: `filmado`, `color`, `decorado`)
-- `GET .api/clips/:id` -> Obtiene un clip
-- `POST .api/clips` -> Carga/actualiza media de una escena existente
-- `PUT .api/clips/:id` -> Actualiza clip
-- `PATCH .api/clips/:id` -> Actualiza parcialmente clip
-- `DELETE .api/clips/:id` -> Elimina clip
+Todas las rutas bajo `/api` requieren un Bearer token JWT.
 
-### Body para crear/actualizar clips
+### `POST /auth/login`
 
-`multipart/form-data`
+```json
+{ "username": "admin26", "password": "..." }
+```
 
-- Campos de texto: `escena`, `titulo`, `filmado`, `descripcion`, `orden`, `color`, `fecha_aprox`, `comentarios_filmacion`, `decorado`
-- Archivos opcionales:
-  - `clip` o `url` (video)
-  - `thumbnail` (imagen)
-  - `storyboard` o `url_storyboard` (storyboard)
-  - `storyboard2` o `url_storyboard2` (segundo storyboard opcional)
+Respuesta: `{ "token": "..." }` — expira en 1 hora.
 
-Las columnas `url`, `url_storyboard`, `url_storyboard2` y `thumbnail` se generan automaticamente en backend segun la escena.
-Ejemplo de estructura: `clips/escena02/TPS_A014_0028.mp4`.
+---
 
-Flujo de escenas fijas en `POST /api/clips`:
+## Rutas de clips
 
-- Busca la escena existente en Supabase por `escena` (ej: `26A` -> `Escena 26A`), o por `titulo`/`orden`
-- Si no existe, responde error
-- Si existe y no tenia `url`, se considera primera carga
-- Si existe y ya tenia `url`, se considera reemplazo/actualizacion
+Base: `/api/clips` — requiere `Authorization: Bearer <token>`
 
-Formato recomendado:
+| Método | Ruta | Descripción |
+|---|---|---|
+| `GET` | `/api/clips` | Lista todos los clips |
+| `GET` | `/api/clips/:id` | Obtiene un clip por ID |
+| `POST` | `/api/clips` | Carga media en una escena existente |
+| `PUT` | `/api/clips/:id` | Reemplaza un clip |
+| `PATCH` | `/api/clips/:id` | Actualiza parcialmente un clip |
+| `DELETE` | `/api/clips/:id` | Elimina un clip |
+| `POST` | `/api/clips/upload-url` | Genera URL firmada para subir directo a R2 |
 
-- Enviar `escena=26A` (tambien soporta `2`, `10`, `26B`)
-- El backend lo transforma automaticamente a `titulo = Escena 26A` para buscar en la tabla
+### Queries opcionales en `GET /api/clips`
 
-Validación mínima:
+- `filmado=true|false`
+- `color=<valor>`
+- `decorado=<valor>`
 
-- `titulo` es obligatorio
-- si `filmado=true`, se requiere subir archivo `clip`/`url`
-- si `filmado=false`, se requiere subir `storyboard`/`url_storyboard` o `storyboard2`/`url_storyboard2`
+---
 
-### Supabase (metadatos)
+## Subida de archivos
 
-Definí una tabla (por defecto `movie_clips`) con columnas sugeridas:
+Hay dos modos de subir archivos al bucket.
 
-- `id` uuid primary key default gen_random_uuid()
-- `titulo` text not null
-- `url` text null
-- `url_storyboard` text null
-- `url_storyboard2` text null
-- `filmado` boolean not null default false
-- `descripcion` text null
-- `orden` int4 null
-- `color` text null
-- `fecha_aprox` text null
-- `comentarios_filmacion` text null
-- `decorado` text null
-- `thumbnail` text null
+### Modo 1 — Via servidor (multipart/form-data)
 
-### Rclone para archivos pesados
+El archivo pasa por el servidor antes de ir a R2 (via rclone) o guardarse localmente.
 
-Sí, se puede implementar en esta API y ya quedó integrado de forma opcional.
+Campos aceptados en `POST /api/clips` y `PUT|PATCH /api/clips/:id`:
 
-Variables importantes:
+| Campo | Tipo | Contenido |
+|---|---|---|
+| `clip` o `url` | archivo | Video de la escena |
+| `thumbnail` | archivo | Imagen de portada |
+| `storyboard` o `url_storyboard` | archivo | Storyboard principal |
+| `storyboard2` o `url_storyboard2` | archivo | Storyboard secundario (opcional) |
 
-- `USE_RCLONE_UPLOAD=true` para activar rclone
-- `RCLONE_REMOTE` por ejemplo `cloudflare-r2`
-- `RCLONE_REMOTE_BASE_PATH` por ejemplo `fueguito-media`
-- `STORAGE_PUBLIC_BASE_URL` URL pública base para construir links de archivos
+Campos de texto: `escena`, `titulo`, `filmado`, `descripcion`, `orden`, `color`, `fecha_aprox`, `comentarios_filmacion`, `decorado`.
 
-Si `USE_RCLONE_UPLOAD=false`, guarda archivos en `LOCAL_UPLOAD_ROOT`.
+Tamaño máximo por archivo: **2 GB**.
 
-# Autenticación:
-Las credenciales como administrador son (En el código la contraseña esta hasheada): 
+### Modo 2 — Presigned URL (recomendado para archivos pesados)
 
-email: "user@email.com"
-password: "strongPass123"
+El archivo va directo del cliente a R2 sin pasar por el servidor.
 
-# En POST:
+**Paso 1 — Pedir la URL firmada**
 
-`.auth/login`  
-Se pasa en un JSON las credenciales y se obtiene el token válido
+`POST /api/clips/upload-url`
 
 ```json
 {
-  "id": 1,
-  "email": "user@email.com",
-  "password": "strongPass123"
+  "escena": "26A",
+  "filename": "TPS_A014_0028.mp4",
+  "contentType": "video/mp4",
+  "fileType": "clip"
 }
+```
 
+Respuesta:
+```json
+{
+  "uploadUrl": "https://...(URL firmada de R2)...",
+  "publicUrl": "https://cdn.tudominio.com/fueguitoweb/clips/escena26a/TPS_A014_0028.mp4",
+  "key": "fueguitoweb/clips/escena26a/TPS_A014_0028.mp4",
+  "expiresIn": 3600
+}
+```
+
+`fileType` puede ser: `clip`, `thumbnail`, `storyboard`, `storyboard2`.
+
+**Paso 2 — Subir el archivo directo a R2**
+
+```
+PUT <uploadUrl>
+Content-Type: video/mp4
+Body: <binario del archivo>
+```
+
+**Paso 3 — Guardar la URL en Supabase**
+
+`PATCH /api/clips/:id`
+
+```json
+{ "url": "<publicUrl del paso 1>" }
+```
+
+Usar `url_storyboard`, `url_storyboard2` o `thumbnail` según corresponda.
+
+---
+
+## Lógica de escenas
+
+`POST /api/clips` **no crea filas nuevas**: la escena debe existir previamente en Supabase. El backend la busca por `titulo` (ej: `Escena 26A`) o `orden`, y actualiza la fila existente.
+
+El campo `escena` acepta formatos: `2`, `10`, `26A`, `26B`. El backend lo convierte automáticamente a `Escena 26A` para la búsqueda.
+
+Validaciones:
+- Si `filmado=true` → se requiere `clip`/`url`
+- Si `filmado=false` → se requiere `storyboard` o `storyboard2`
+
+Estructura de archivos en el bucket:
+```
+fueguitoweb/clips/escena26a/TPS_A014_0028.mp4
+fueguitoweb/clips/escena26a/thumbnail.jpg
+fueguitoweb/clips/escena10/storyboard.png
+```
+
+---
+
+## Tabla Supabase
+
+Columnas sugeridas para la tabla (`movie_clips` por defecto, configurable con `SUPABASE_CLIPS_TABLE`):
+
+```sql
+id                    uuid primary key default gen_random_uuid()
+titulo                text not null
+filmado               boolean not null default false
+orden                 int4 null
+url                   text null
+url_storyboard        text null
+url_storyboard2       text null
+thumbnail             text null
+descripcion           text null
+color                 text null
+fecha_aprox           text null
+comentarios_filmacion text null
+decorado              text null
+```
+
+---
+
+## Deploy
+
+El proyecto incluye soporte para:
+
+- **Railway / Render** — configurar variables de entorno en el dashboard y usar `npm start` como start command.
+- **Docker** — `Dockerfile` incluido, instala rclone automáticamente.
+- **VPS con systemd** — plantilla en `deploy/systemd/fueguito-api.service`. Los scripts `scripts/bootstrap-rclone.sh` y `scripts/start-server.sh` configuran rclone automáticamente al iniciar.
+
+> El almacenamiento en Railway/Render es efímero. Usar siempre R2 como destino final (`USE_RCLONE_UPLOAD=true` o el flujo de presigned URLs).

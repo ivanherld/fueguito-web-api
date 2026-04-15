@@ -4,24 +4,32 @@ import bcrypt from 'bcrypt';
 
 const default_user = {
     id: 1,
-    email: "user@email.com"
-    //password: "strongPass123"
+    username: "admin26"
+    //password: "LuFa_2026"
 }
 
 export const login = async (req, res) => {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+        return res.status(400).json({ error: 'username y password son requeridos' });
+    }
+
+    if (!process.env.ADMIN_PASS_HASH) {
+        return res.status(500).json({ error: 'Falta ADMIN_PASS_HASH en variables de entorno' });
+    }
 
     //Se debe verificar las credenciales del usuario, se utilizo HASH con bcrypt 
 
-    const isMatch = bcrypt.compare(password, process.env.ADMIN_PASS_HASH);
+    const isMatch = await bcrypt.compare(password, process.env.ADMIN_PASS_HASH);
 
     //Ejemplo de usuario autenticado
-    const user = { id: 1, email };
+    const user = { id: 1, username };
 
-    if (email === default_user.email && isMatch) {
+    if (username === default_user.username && isMatch) {
         const token = generateToken(user);
-        res.json({ token });
+        return res.json({ token });
     } else {
-        res.sendStatus(401);
+        return res.sendStatus(401);
     }
 }
