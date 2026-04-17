@@ -23,6 +23,8 @@ const getS3Client = () => {
     region: 'auto',
     endpoint,
     credentials: { accessKeyId, secretAccessKey },
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   });
 
   return s3Client;
