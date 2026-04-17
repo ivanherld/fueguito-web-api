@@ -1,0 +1,12 @@
+name = "fueguito-upload"
+main = "index.js"
+compatibility_date = "2024-09-23"
+
+# Binding al bucket de R2
+# Reemplazar "fueguitoweb" con el nombre real de tu bucket
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "fueguitoweb"
+
+# UPLOAD_SECRET se configura como secret (nunca en este archivo):
+#   wrangler secret put UPLOAD_SECRET

@@ -1,5 +1,5 @@
 import * as clipsService from '../services/clips.services.js';
-import { generateUploadUrl, buildUploadKey } from '../services/presigned.service.js';
+import { generateUploadUrl, generateWorkerUploadUrl, buildUploadKey } from '../services/presigned.service.js';
 
 export const getAllClips = async (req, res) => {
   try {
@@ -72,7 +72,9 @@ export const getUploadUrl = async (req, res) => {
       clipsService.sceneFolder({ escena, titulo, orden }),
     );
     const key = buildUploadKey({ folder, filename });
-    const result = await generateUploadUrl({ key, contentType });
+    const result = process.env.WORKER_URL
+      ? generateWorkerUploadUrl({ key, contentType })
+      : await generateUploadUrl({ key, contentType });
 
     return res.json(result);
   } catch (error) {
