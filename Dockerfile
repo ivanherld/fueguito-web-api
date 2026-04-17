@@ -19,6 +19,8 @@ RUN npm install --production
 # Copiar código
 COPY . .
 
+RUN chmod +x scripts/start-server.sh scripts/bootstrap-rclone.sh
+
 # Exponer puerto
 EXPOSE 3000
 
