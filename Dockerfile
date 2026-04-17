@@ -1,8 +1,11 @@
 FROM node:18-alpine
 
 # Instalar rclone
-RUN apk add --no-cache curl bash && \
-    curl https://rclone.org/install.sh | bash && \
+RUN apk add --no-cache curl bash unzip && \
+    curl -O https://downloads.rclone.org/rclone-current-linux-amd64.zip && \
+    unzip rclone-current-linux-amd64.zip && \
+    mv rclone-*-linux-amd64/rclone /usr/local/bin/ && \
+    rm -rf rclone-* && \
     rm -rf /var/cache/apk/*
 
 WORKDIR /app
