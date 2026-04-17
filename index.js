@@ -2,10 +2,15 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
+import swaggerUi from 'swagger-ui-express';
 import { authentication } from './src/middlewares/authentication.js';
 import authRouter from './src/routes/auth.routes.js';
 import clipsRouter from './src/routes/clips.routes.js';
 import notFound from './src/middlewares/not-found.js';
+
+const swaggerDocument = parse(readFileSync('./swagger.yaml', 'utf8'));
 
 const app = express();
 
@@ -24,6 +29,8 @@ app.get('/', (req, res) => {
 });
 
 app.use(bodyParser.json());
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
 app.use('/auth', authRouter);
 
 app.use('/api', authentication, clipsRouter);

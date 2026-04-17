@@ -45,6 +45,18 @@ node -e "import('bcrypt').then(m => m.default.hash('TU_PASSWORD', 10).then(conso
 
 ---
 
+## Documentación interactiva (Swagger)
+
+Con el servidor corriendo, abrí en el navegador:
+
+```
+http://localhost:3001/api-docs
+```
+
+Desde ahí podés explorar y probar todos los endpoints. Para autenticarte en la UI: hacé login con `POST /auth/login`, copiá el token y pegalo en el botón **Authorize** con el formato `Bearer <token>`.
+
+---
+
 ## Autenticación
 
 Todas las rutas bajo `/api` requieren un Bearer token JWT.

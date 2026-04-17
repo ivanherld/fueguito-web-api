@@ -1,5 +1,5 @@
 import * as clipsModel from '../models/clips.model.js';
-import { saveUploadedFile } from './storage.service.js';
+import { saveUploadedFile, deleteUploadedFile } from './storage.service.js';
 
 const parseBoolean = (value) => {
   if (typeof value === 'boolean') {
@@ -219,25 +219,35 @@ export const updateClip = async ({ id, body, files }) => {
 
   const nextFilmadoRaw = pickFirstDefined(body.filmado, currentClip.filmado);
   const nextFilmado = parseBoolean(nextFilmadoRaw);
-  const nextUrl = pickFirstDefined(clipUploaded?.url, body.url || undefined, currentClip.url, null);
-  const nextStoryboard = pickFirstDefined(
-    storyboardUploaded?.url,
-    body.url_storyboard || undefined,
-    currentClip.url_storyboard,
-    null,
-  );
-  const nextStoryboard2 = pickFirstDefined(
-    storyboard2Uploaded?.url,
-    body.url_storyboard2 || undefined,
-    currentClip.url_storyboard2,
-    null,
-  );
-  const nextThumbnail = pickFirstDefined(
-    thumbnailUploaded?.url,
-    body.thumbnail || undefined,
-    currentClip.thumbnail,
-    null,
-  );
+
+  // Para cada campo de archivo:
+  // - Si se sube archivo nuevo → usa la URL nueva
+  // - Si body.field === null o "" → limpia (borra de storage)
+  // - Si body.field === undefined → mantiene el valor actual
+  const resolveField = (uploaded, bodyValue, currentValue) => {
+    if (uploaded?.url) return uploaded.url;
+    if (bodyValue !== undefined) return bodyValue || null;
+    return currentValue ?? null;
+  };
+
+  const nextUrl = resolveField(clipUploaded, body.url, currentClip.url);
+  const nextStoryboard = resolveField(storyboardUploaded, body.url_storyboard, currentClip.url_storyboard);
+  const nextStoryboard2 = resolveField(storyboard2Uploaded, body.url_storyboard2, currentClip.url_storyboard2);
+  const nextThumbnail = resolveField(thumbnailUploaded, body.thumbnail, currentClip.thumbnail);
+
+  // Archivos viejos a borrar del bucket: cuando se limpia el campo o se reemplaza con distinto nombre
+  const oldToDelete = [
+    !nextUrl && currentClip.url ? currentClip.url : null,
+    !nextStoryboard && currentClip.url_storyboard ? currentClip.url_storyboard : null,
+    !nextStoryboard2 && currentClip.url_storyboard2 ? currentClip.url_storyboard2 : null,
+    !nextThumbnail && currentClip.thumbnail ? currentClip.thumbnail : null,
+    nextUrl && currentClip.url && currentClip.url !== nextUrl ? currentClip.url : null,
+    nextStoryboard && currentClip.url_storyboard && currentClip.url_storyboard !== nextStoryboard ? currentClip.url_storyboard : null,
+    nextStoryboard2 && currentClip.url_storyboard2 && currentClip.url_storyboard2 !== nextStoryboard2 ? currentClip.url_storyboard2 : null,
+    nextThumbnail && currentClip.thumbnail && currentClip.thumbnail !== nextThumbnail ? currentClip.thumbnail : null,
+  ].filter(Boolean);
+
+  await Promise.all(oldToDelete.map(deleteUploadedFile));
 
   const payload = {
     ...(body.titulo !== undefined ? { titulo: body.titulo } : {}),

@@ -1,0 +1,630 @@
+openapi: 3.0.3
+info:
+  title: Fueguito API
+  description: |
+    API REST para gestión de clips/escenas de la película Fueguito.
+
+    ## Autenticación
+    Todos los endpoints bajo `/api` requieren un token JWT en el header:
+    ```
+    Authorization: Bearer <token>
+    ```
+    Obtené el token con `POST /auth/login`.
+
+    ## Flujo de subida de archivos
+    Hay dos modos:
+    - **Vía servidor** (multipart/form-data): para archivos pequeños/medianos.
+    - **Vía URL prefirmada** (recomendado para archivos grandes): generá la URL con `POST /api/clips/upload-url`, subí directamente a R2, luego actualizá el clip con `PATCH /api/clips/:id`.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3001
+    description: Desarrollo local
+
+tags:
+  - name: Auth
+    description: Autenticación
+  - name: Clips
+    description: Gestión de escenas/clips
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Clip:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 42
+        titulo:
+          type: string
+          example: "Escena 26A"
+        orden:
+          type: integer
+          example: 26
+        descripcion:
+          type: string
+          nullable: true
+          example: "Escena de presentación del protagonista"
+        filmado:
+          type: boolean
+          example: false
+        color:
+          type: string
+          nullable: true
+          example: "color"
+        decorado:
+          type: string
+          nullable: true
+          example: "Interior casa"
+        fecha_aprox:
+          type: string
+          nullable: true
+          example: "2026-03-15"
+        comentarios_filmacion:
+          type: string
+          nullable: true
+          example: "Necesita luz natural"
+        url:
+          type: string
+          nullable: true
+          description: URL pública del video clip
+          example: "https://cdn.example.com/fueguitoweb/clips/escena26a/TPS_A014_0028.mp4"
+        thumbnail:
+          type: string
+          nullable: true
+          description: URL pública del thumbnail
+          example: "https://cdn.example.com/fueguitoweb/clips/escena26a/thumb.jpg"
+        url_storyboard:
+          type: string
+          nullable: true
+          description: URL pública del storyboard principal
+          example: "https://cdn.example.com/fueguitoweb/clips/escena26a/storyboard.jpg"
+        url_storyboard2:
+          type: string
+          nullable: true
+          description: URL pública del storyboard secundario
+          example: "https://cdn.example.com/fueguitoweb/clips/escena26a/storyboard2.jpg"
+
+    ClipWithMode:
+      allOf:
+        - $ref: '#/components/schemas/Clip'
+        - type: object
+          properties:
+            mode:
+              type: string
+              enum: [updated, created-entry]
+              description: |
+                - `updated`: la escena ya tenía un clip y fue reemplazado
+                - `created-entry`: la escena existía pero no tenía clip; ahora fue asignado
+
+    ClipUpdateBody:
+      type: object
+      properties:
+        titulo:
+          type: string
+          example: "Escena 26A"
+        orden:
+          type: integer
+          example: 26
+        descripcion:
+          type: string
+        filmado:
+          type: boolean
+        color:
+          type: string
+        decorado:
+          type: string
+        fecha_aprox:
+          type: string
+          format: date
+        comentarios_filmacion:
+          type: string
+        clip:
+          type: string
+          format: binary
+          description: Video del clip (alias de `url`)
+        url:
+          type: string
+          format: binary
+          description: Alias de `clip`, o URL de texto plano
+        thumbnail:
+          type: string
+          format: binary
+          description: Imagen thumbnail, o URL de texto plano
+        storyboard:
+          type: string
+          format: binary
+          description: Storyboard principal (alias de `url_storyboard`)
+        url_storyboard:
+          type: string
+          format: binary
+          description: Alias de `storyboard`, o URL de texto plano
+        storyboard2:
+          type: string
+          format: binary
+          description: Storyboard secundario (alias de `url_storyboard2`)
+        url_storyboard2:
+          type: string
+          format: binary
+          description: Alias de `storyboard2`, o URL de texto plano
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Descripción del error"
+
+paths:
+  /:
+    get:
+      summary: Health check
+      description: Verifica que el servidor esté corriendo.
+      responses:
+        '200':
+          description: Servidor activo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Bienvenidos a la API REST de Iván"
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      description: Autentica al usuario admin y devuelve un JWT válido por 1 hora.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: "admin26"
+                password:
+                  type: string
+                  format: password
+                  example: "tu_contraseña"
+      responses:
+        '200':
+          description: Login exitoso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        '400':
+          description: Faltan username o password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Credenciales incorrectas
+
+  /api/clips:
+    get:
+      tags: [Clips]
+      summary: Listar todos los clips
+      description: Devuelve todas las escenas ordenadas por `orden`. Permite filtrar por estado.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: filmado
+          in: query
+          description: Filtrar por estado de filmación
+          schema:
+            type: boolean
+          example: false
+        - name: color
+          in: query
+          description: Filtrar por tipo de color
+          schema:
+            type: string
+          example: "color"
+        - name: decorado
+          in: query
+          description: Filtrar por decorado/locación
+          schema:
+            type: string
+          example: "Interior casa"
+      responses:
+        '200':
+          description: Lista de clips
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clips:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Clip'
+        '401':
+          description: Token inválido o ausente
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags: [Clips]
+      summary: Asignar archivos a una escena existente
+      description: |
+        **No crea una fila nueva.** Busca una escena pre-existente en Supabase por `titulo` (ej: `Escena 26A`), `escena` (ej: `26A`) u `orden`, sube los archivos y actualiza la fila.
+
+        ### Identificación de la escena (al menos uno requerido)
+        - `escena`: token de escena (`26`, `26A`, `26B`)
+        - `titulo`: título completo (`Escena 26A`)
+        - `orden`: número de orden
+
+        ### Reglas de validación
+        - Si `filmado=true`: debe incluirse el campo `clip` (o `url`).
+        - Si `filmado=false`: debe incluirse `storyboard` (o `url_storyboard`) o `storyboard2` (o `url_storyboard2`).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                escena:
+                  type: string
+                  description: Token de escena (ej. `26A`)
+                  example: "26A"
+                titulo:
+                  type: string
+                  description: Título completo (ej. `Escena 26A`)
+                  example: "Escena 26A"
+                orden:
+                  type: integer
+                  description: Número de orden de la escena
+                  example: 26
+                filmado:
+                  type: boolean
+                  description: Si la escena ya fue filmada
+                descripcion:
+                  type: string
+                color:
+                  type: string
+                decorado:
+                  type: string
+                fecha_aprox:
+                  type: string
+                  format: date
+                comentarios_filmacion:
+                  type: string
+                clip:
+                  type: string
+                  format: binary
+                  description: Archivo de video del clip (alias de `url`)
+                url:
+                  type: string
+                  format: binary
+                  description: Alias de `clip`
+                thumbnail:
+                  type: string
+                  format: binary
+                  description: Imagen thumbnail
+                storyboard:
+                  type: string
+                  format: binary
+                  description: Storyboard principal (alias de `url_storyboard`)
+                url_storyboard:
+                  type: string
+                  format: binary
+                  description: Alias de `storyboard`
+                storyboard2:
+                  type: string
+                  format: binary
+                  description: Storyboard secundario (alias de `url_storyboard2`)
+                url_storyboard2:
+                  type: string
+                  format: binary
+                  description: Alias de `storyboard2`
+      responses:
+        '201':
+          description: Escena actualizada con los archivos subidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClipWithMode'
+        '400':
+          description: Error de validación o escena no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token inválido o ausente
+
+  /api/clips/upload-url:
+    post:
+      tags: [Clips]
+      summary: Generar URL prefirmada para subida directa a R2
+      description: |
+        Genera una URL prefirmada de S3 para que el cliente suba el archivo **directamente a Cloudflare R2**, sin pasar por el servidor. Ideal para archivos grandes (>100 MB).
+
+        ### Flujo completo
+        1. `POST /api/clips/upload-url` → obtener `uploadUrl` y `publicUrl`
+        2. `PUT {uploadUrl}` desde el cliente con el binario en el body y el header `Content-Type` correcto
+        3. `PATCH /api/clips/:id` con `{ "url": publicUrl }` para persistir la URL en Supabase
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, contentType]
+              properties:
+                filename:
+                  type: string
+                  description: Nombre del archivo (se sanitiza automáticamente)
+                  example: "TPS_A014_0028.mp4"
+                contentType:
+                  type: string
+                  description: MIME type del archivo
+                  example: "video/mp4"
+                fileType:
+                  type: string
+                  enum: [clip, thumbnail, storyboard, storyboard2]
+                  description: Tipo de archivo (informativo, no afecta el key en R2)
+                  example: "clip"
+                escena:
+                  type: string
+                  description: Token de escena para construir la ruta en R2
+                  example: "26A"
+                titulo:
+                  type: string
+                  description: Título completo de la escena
+                  example: "Escena 26A"
+                orden:
+                  type: integer
+                  description: Número de orden de la escena
+                  example: 26
+      responses:
+        '200':
+          description: URL prefirmada generada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    description: URL prefirmada para hacer PUT del archivo (expira en `expiresIn` segundos)
+                    example: "https://r2.example.com/bucket/fueguitoweb/clips/escena26a/TPS_A014_0028.mp4?X-Amz-Signature=..."
+                  publicUrl:
+                    type: string
+                    description: URL pública del archivo una vez subido
+                    example: "https://cdn.example.com/fueguitoweb/clips/escena26a/TPS_A014_0028.mp4"
+                  key:
+                    type: string
+                    description: Key del objeto en R2
+                    example: "fueguitoweb/clips/escena26a/TPS_A014_0028.mp4"
+                  expiresIn:
+                    type: integer
+                    description: Segundos hasta que expire la URL prefirmada
+                    example: 3600
+        '400':
+          description: Parámetros inválidos o falta configuración R2
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token inválido o ausente
+
+  /api/clips/{id}:
+    get:
+      tags: [Clips]
+      summary: Obtener un clip por ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 42
+      responses:
+        '200':
+          description: Clip encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clip'
+        '404':
+          description: Clip no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token inválido o ausente
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      tags: [Clips]
+      summary: Reemplazar campos de un clip por ID
+      description: |
+        Actualiza campos de un clip existente. Acepta archivos vía multipart o URLs de texto plano en el body (para el flujo de URL prefirmada).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 42
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClipUpdateBody'
+      responses:
+        '200':
+          description: Clip actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clip'
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Clip no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token inválido o ausente
+
+    patch:
+      tags: [Clips]
+      summary: Actualizar campos parciales de un clip
+      description: |
+        Igual que `PUT` pero solo actualiza los campos enviados. Ideal para el paso 3 del flujo de URL prefirmada:
+        ```json
+        { "url": "https://cdn.example.com/fueguitoweb/clips/escena26a/video.mp4" }
+        ```
+        Acepta tanto `multipart/form-data` (con archivos) como `application/json` (con URLs de texto).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 42
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClipUpdateBody'
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  description: URL pública del video (tras subida prefirmada)
+                  example: "https://cdn.example.com/fueguitoweb/clips/escena26a/video.mp4"
+                thumbnail:
+                  type: string
+                  example: "https://cdn.example.com/fueguitoweb/clips/escena26a/thumb.jpg"
+                url_storyboard:
+                  type: string
+                  example: "https://cdn.example.com/fueguitoweb/clips/escena26a/sb1.jpg"
+                url_storyboard2:
+                  type: string
+                  example: "https://cdn.example.com/fueguitoweb/clips/escena26a/sb2.jpg"
+                filmado:
+                  type: boolean
+                descripcion:
+                  type: string
+                color:
+                  type: string
+                decorado:
+                  type: string
+                fecha_aprox:
+                  type: string
+                  format: date
+                comentarios_filmacion:
+                  type: string
+      responses:
+        '200':
+          description: Clip actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clip'
+        '400':
+          description: Error de validación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Clip no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token inválido o ausente
+
+    delete:
+      tags: [Clips]
+      summary: Eliminar un clip por ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          example: 42
+      responses:
+        '200':
+          description: Clip eliminado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Clip eliminado"
+                  id:
+                    type: string
+                    example: "42"
+        '404':
+          description: Clip no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Token inválido o ausente
+        '500':
+          description: Error interno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

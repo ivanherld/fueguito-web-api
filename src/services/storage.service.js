@@ -35,6 +35,32 @@ const buildPublicUrl = (relativeFilePath) => {
   return `${cleanBase}/${relativeFilePath.replace(/\\/g, '/')}`;
 };
 
+const rcloneDeleteFile = async (remotePath) => {
+  return new Promise((resolve, reject) => {
+    const child = spawn('rclone', ['deletefile', remotePath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr || `rclone finalizo con codigo ${code}`));
+        return;
+      }
+      resolve();
+    });
+  });
+};
+
 const rcloneCopyToRemote = async (localPath, remotePath) => {
   return new Promise((resolve, reject) => {
     const child = spawn('rclone', ['copyto', localPath, remotePath], {
@@ -59,6 +85,30 @@ const rcloneCopyToRemote = async (localPath, remotePath) => {
       resolve();
     });
   });
+};
+
+export const deleteUploadedFile = async (publicUrl) => {
+  if (!publicUrl) return;
+
+  let relativeFilePath;
+  if (STORAGE_BASE_URL) {
+    const cleanBase = STORAGE_BASE_URL.replace(/\/$/, '');
+    if (!publicUrl.startsWith(cleanBase)) return;
+    relativeFilePath = publicUrl.slice(cleanBase.length + 1);
+  } else {
+    relativeFilePath = publicUrl;
+  }
+
+  if (!relativeFilePath) return;
+
+  if (USE_RCLONE_UPLOAD) {
+    if (!RCLONE_REMOTE) return;
+    const remotePath = `${RCLONE_REMOTE}:${path.posix.join(RCLONE_REMOTE_BASE_PATH, relativeFilePath)}`;
+    await rcloneDeleteFile(remotePath);
+  } else {
+    const localPath = path.join(LOCAL_UPLOAD_ROOT, relativeFilePath);
+    await unlink(localPath).catch(() => null);
+  }
 };
 
 export const saveUploadedFile = async (file, folder = 'clips', options = {}) => {
