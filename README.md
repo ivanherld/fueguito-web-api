@@ -50,7 +50,7 @@ node -e "import('bcrypt').then(m => m.default.hash('TU_PASSWORD', 10).then(conso
 Con el servidor corriendo, abrí en el navegador:
 
 ```
-http://localhost:3001/api-docs
+http://localhost:3000/api-docs
 ```
 
 Desde ahí podés explorar y probar todos los endpoints. Para autenticarte en la UI: hacé login con `POST /auth/login`, copiá el token y pegalo en el botón **Authorize** con el formato `Bearer <token>`.
